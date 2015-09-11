@@ -93,9 +93,9 @@ def update_local_storage_config(module, server_template):
     controllers_spec = module.params['local_storage']
     if controllers_spec:
         controllers_config =  []
-        for controller_num in controllers_spec:
-            slot_number = controller_num
-            controller_config_spec = controllers_spec[slot_number]
+        for controller_config_spec in controllers_spec:
+            slot_number = controller_config_spec['controller']
+            # controller_config_spec = controllers_spec[slot_number]
             mode = controller_config_spec.get('mode', 'RAID')
             initialize = controller_config_spec.get('initialize', False)
             drives_spec = controller_config_spec['logical_drives']
@@ -123,7 +123,6 @@ def update_local_storage_config(module, server_template):
 
 
         changed = True
-    # module.fail_json(msg= server_template)
 
     return changed
 
@@ -161,10 +160,11 @@ def update_profile_template(con, module):
 
                 server_template['firmware'] = firmware
 
-    update_local_storage_config(module, server_template)
-    servers= hpov.servers(con)
-    servers.update_server_profile_template(server_template)
-    changed = True
+    changed = update_local_storage_config(module, server_template)
+
+    if changed:
+        servers= hpov.servers(con)
+        servers.update_server_profile_template(server_template)
 
     return changed
 
@@ -212,38 +212,40 @@ def main():
             oneview_host=dict(required=True, type='str'),
             username=dict(required=True, type='str'),
             password=dict(required=True, type='str'),
-            state=dict(
-                required=False,
-                choices=[
-                    'present',
-                    'absent',
-                ],
-                default='present'),
+            #state=dict(
+            #    required=False,
+            #    choices=[
+            #        'present',
+            #        'absent',
+            #    ],
+            #    default='present'),
             server_hardware_type=dict(required=True, type='str', default=None),
             firmware_baseline=dict(required=False, type='str', default=None),
-            local_storage=dict(required=False, type='dict', default=None))
+            local_storage=dict(required=False, type='list', default=None))
 
         )
+
 
     server_template_name = module.params['name']
     oneview_host = module.params['oneview_host']
     credentials = {'userName': module.params['username'], 'password': module.params['password']}
-    # try:
-    con = hpov.connection(oneview_host)
-    con.login(credentials)
+    try:
+        con = hpov.connection(oneview_host)
+        con.login(credentials)
 
-    servers = hpov.servers(con)
-    server_template = servers.get_server_profile_template_by_name(server_template_name)
-    changed  = False
-    if server_template:
-        changed = update_profile_template(con, module)
-    else:
-        create_profile_template(con, module)
-        changed = True
+        servers = hpov.servers(con)
+        server_template = servers.get_server_profile_template_by_name(server_template_name)
+        changed  = False
+        if server_template:
+            changed = update_profile_template(con, module)
+            module.exit_json(changed=changed, msg = 'Update profile template')
+        else:
+            create_profile_template(con, module)
+            changed = True
+            module.exit_json(changed=changed, msg = 'Created profile template')
 
-    module.exit_json(changed=changed)
-    # except Exception, e:
-    #    module.fail_json(msg=e.message)
+    except Exception, e:
+        module.fail_json(msg=e.message)
 
 from ansible.module_utils.basic import *
 if __name__ == '__main__':

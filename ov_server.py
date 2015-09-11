@@ -81,7 +81,7 @@ def create_profile(con, server_name, server_template):
     server_profile['name'] = server_name
 
     # TODO: uncomment temp hack to speed up dev/testing, let profiles remain unassigned
-    # server_profile['serverHardwareUri'] = server_hardware['targets'][0]['serverHardwareUri']
+    #server_profile['serverHardwareUri'] = server_hardware['targets'][0]['serverHardwareUri']
 
     servers.create_server_profile(server_profile)
 
