@@ -35,7 +35,7 @@ options:
 Example :
 
 
-- ov_server:
+- ov_appliance_settings:
     initial_ip: <dhcp assigned IP >
     username: user
     password: pass
@@ -55,18 +55,21 @@ from hpOneView.exceptions import *
 
 import time
 
+
+
 def changeDefaultPassword(con, newPassword):
     request = {'userName': 'Administrator',
                'oldPassword':'admin',
                'newPassword':newPassword}
     con.post(hpov.common.uri['users'] + '/changePassword', request)
 
-
 def login(con, credential):
     # Login with givin credentials
+
     try:
         con.login(credential)
         return True
+
     except HPOneViewException as e:
         #TODO: Need to ignore the failure if the appliance still has the default initial password
         return False
@@ -78,12 +81,13 @@ def main():
             initial_ip=dict(required=True, type='str'),
             username=dict(required=True, type='str'),
             password=dict(required=True, type='str'),
-            ipv4_type=dict(required=True, choices=['DHCP', 'STATIC']),
+            ipv4_type=dict(required=True, choices=['DHCP', 'STATIC'], type='str'),
             ipv4_address=dict(required=False, type='str'),
             hostname =dict(required=True, type='str'),
             domain_name=dict(required=False, type='str'),
             ipv4_subnet=dict(required=False, type='str'),
             ipv4_gateway = dict(required= False, type='str' )
+
         ))
 
     initial_ip = module.params['initial_ip']
@@ -98,6 +102,7 @@ def main():
     ipv4_subnet = module.params['ipv4_subnet']
     ipv4_gateway = module.params['ipv4_gateway']
 
+    changed = False
     try:
 
         # Is FTS really required? Check EULA, attempt logging in to ipv4 address using creds
@@ -106,20 +111,34 @@ def main():
         # change default password from admin to what was passed here
         # do initial appliance network config
 
+        tries = 0
+        while tries < 20:
+            try:
+                con = hpov.connection(initial_ip)
+                # if appliance is starting up, wait for startup to complete
+                sts = hpov.settings(con)
+                startup_progress = sts.get_startup_progress()
+                complete = startup_progress ['complete']
+                total = startup_progress ['total']
+                #TODO handle timeout
+                while startup_progress ['complete'] < startup_progress ['total']:
+                    time.sleep(15)
+                    startup_progress =  sts.get_startup_progress()
+                break
+            except Exception, e:
+                time.sleep(60)
+                tries += 1
+        else:
+            raise Exception("OneView did not start...")
 
-        con = hpov.connection(ipv4_address)
-        if ( con.get_eula_status() is False and
-            login(con, credentials)):
+
+        if (con.get_eula_status() is False and login(con, credentials)):
             # FTS not needed. nothing to do
-
-            module.exit_json(
-               changed=False
-            )
+            changed = False
         else:
             con.set_eula('yes')
             changeDefaultPassword(con, credentials['password'])
             login(con, credentials)
-
             settings=hpov.settings(con)
             network_settings = settings.get_appliance_network_interfaces()
 
@@ -127,6 +146,9 @@ def main():
             network_settings['applianceNetworks'][0]['ipv4Type'] = ipv4_type
             network_settings['applianceNetworks'][0]['domainName'] = domain_name
             network_settings['applianceNetworks'][0]['searchDomains'] = [domain_name]
+            network_settings['applianceNetworks'][0].pop('virtIpv4Addr', None)
+            network_settings['applianceNetworks'][0]['interfaceName']=''
+            network_settings['applianceNetworks'][0]['aliasDisabled']=True
 
             if ipv4_type == 'DHCP':
                 network_settings['applianceNetworks'][0]['app1Ipv4Addr']= None
@@ -138,8 +160,8 @@ def main():
                 network_settings['applianceNetworks'][0]['ipv4Gateway']= ipv4_gateway
 
             settings.set_appliance_network_interface(network_settings)
-
             #wait till we can login before proceeding
+            con = hpov.connection(ipv4_address)
             tries  = 0
             for tries in [1-5]:
                 try:
@@ -149,11 +171,12 @@ def main():
                     time.sleep(15)
 
             time.sleep(30)
-            module.exit_json(
-                        changed=True)
+            changed = True
+
+        module.exit_json(changed=changed)
 
     except Exception, e:
-        module.fail_json(msg=e.message)
+        module.fail_json(msg= e.message)
 
 
 from ansible.module_utils.basic import *
