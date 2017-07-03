@@ -1,0 +1,209 @@
+###
+# Copyright (2016-2017) Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+###
+---
+# This example contains examples of server profiles with basic configuration.
+# Some other examples of how to create a server profile with advanced settings available:
+#
+# End-to-end example of how to create a Server Profile with SAN storage settings, with a new storage volume created
+# upon profile creation:
+#    - examples/c7000_environment_setup.yml
+#
+# End-to-end example of how to create a Server Profile with Local Storage:
+#   - examples/synergy_environment_setup.yml
+#
+# # HPE ICsp Bare metal server provisioning:
+#   - examples/ICsp
+#   - examples/oneview-web-farm
+#
+# HPE Image Streamer Bare metal server provisioning:
+#   - examples/ImageStreamer
+#   - exampĺes/synergy_create_server_profile_with_deployment_plan.yml
+#   - examples/synergy_image_streamer.yml
+#   - examples/synergy_server_profile_os_deploy.yml
+##
+- hosts: all
+  vars:
+    - config: "{{ playbook_dir }}/oneview_config.json"
+    - enclosure_group_name: 'Jurulinha'
+    - server_hardware_type_name: 'SY 480 Gen9 1'
+    - storage_system_name: ''
+    - storage_pool_name: 'CPG-SSD'
+    - fc_connection_1_name: fc_1
+    - fc_connection_2_name: fc_2
+    - new_volume_name_1: ProfileLUN_01
+    - new_volume_name_2: ProfileLUN_02
+  tasks:
+    - name: Create a Server Profile from a Server Profile Template
+      oneview_server_profile:
+        config: "{{ config }}"
+        data:
+          name: Profile101-LUN
+          serverHardwareTypeName: "{{ server_hardware_type_name }}"
+          enclosureGroupName: "{{ enclosure_group_name }}"
+          affinity: Bay
+          macType: Virtual
+          serialNumberType: Virtual
+          wwnType: Virtual
+          hideUnusedFlexNics: true
+          connections:
+          - id: 1
+            name: connection1
+            functionType: FibreChannel
+            portId: Auto
+            requestedMbps: 2500
+            networkName: "{{ fc_connection_1_name }}"
+          - id: 2
+            name: connection2
+            functionType: FibreChannel
+            portId: Auto
+            requestedMbps: 2500
+            wwpnType: UserDefined
+            wwnn: 10:00:1C:11:00:00:00:00
+            wwpn: 10:00:1C:11:00:00:00:01
+            macType: UserDefined
+            mac: '12:11:11:00:00:00'
+            networkName: "{{ fc_connection_2_name }}"
+          sanStorage:
+            hostOSType: Windows 2012 / WS2012 R2
+            manageSanStorage: true
+            volumeAttachments:
+            - id: 1
+              volumeUri: null
+              volumeName: "{{ new_volume_name_1 }}"
+              volumeStoragePoolName: "{{ storage_pool_name }}"
+              volumeStorageSystemName: "{{ storage_system_name }}"
+              volumeProvisionType: Thin
+              volumeProvisionedCapacityBytes: '1073741824'
+              volumeShareable: false
+              lunType: Auto
+              lun:
+              storagePaths:
+              - isEnabled: true
+                connectionId: 1
+              - isEnabled: true
+                connectionId: 2
+              permanent: true
+            - id: 2
+              volumeUri: null
+              volumeName: "{{ new_volume_name_2 }}"
+              volumeStoragePoolName: "{{ storage_pool_name }}"
+              volumeStorageSystemName: "{{ storage_system_name }}"
+              volumeProvisionType: Thin
+              volumeProvisionedCapacityBytes: '1073741824'
+              volumeShareable: false
+              lunType: Auto
+              lun:
+              storagePaths:
+              - isEnabled: true
+                connectionId: 1
+              - isEnabled: true
+                connectionId: 2
+              permanent: false
+
+      delegate_to: localhost
+      register: result
+
+    - debug: msg="{{ result.msg }}"
+
+    - debug: var=server_profile
+    - debug: var=serial_number
+    - debug: var=server_hardware
+    - debug: var=compliance_preview
+    - debug: var=created
+
+    - name: Create a Server Profile with connections
+      oneview_server_profile:
+        config: "{{ config }}"
+        data:
+          name: "{{ inventory_hostname }}-with-connections"
+          connections:
+            - id: 1
+              name: connection1
+              functionType: Ethernet
+              portId: Auto
+              requestedMbps: 2500
+              networkName: "{{ network_name }}"
+      delegate_to: localhost
+
+    - debug: msg="{{ server_profile }}"
+
+    - name: Update Server Profile
+      oneview_server_profile:
+        config: "{{ config }}"
+        state: "present"
+        data:
+          name: "{{ inventory_hostname }}"
+          affinity: "BayAndServer"
+          bootMode:
+            manageMode: True
+            mode: "BIOS"
+      delegate_to: localhost
+      register: result
+
+    - debug: msg="{{result.msg}}"
+
+    - debug: var=server_profile
+
+    - name: Remediate compliance issues
+      oneview_server_profile:
+        config: "{{ config }}"
+        state: "compliant"
+        data:
+          name: "{{ inventory_hostname }}"
+      delegate_to: localhost
+      register: result
+
+    - debug: msg="{{ result.msg }}"
+
+    - name: Delete the Server Profile created from a Server Profile Template
+      oneview_server_profile:
+        config: "{{ config }}"
+        state: "absent"
+        data:
+          name: "{{ inventory_hostname }}"
+      delegate_to: localhost
+      register: result
+
+    - debug: msg="{{ result.msg }}"
+
+    - name: Delete the Server Profile created with connections
+      oneview_server_profile:
+        config: "{{ config }}"
+        state: "absent"
+        data:
+          name: "{{ inventory_hostname }}-with-connections"
+      delegate_to: localhost
+
+    - debug: msg="{{ result.msg }}"
+
+    - name: Create Server Profile without specifying a template
+      oneview_server_profile:
+        config: "{{ config }}"
+        data:
+          name: "{{ inventory_hostname }}"
+          serverHardwareTypeName: "{{ server_hardware_type_name }}"
+          enclosureGroupName: "{{ enclosure_group_name }}"
+      delegate_to: localhost
+
+    - debug: var=server_profile
+
+    - name: Delete the Server Profile
+      oneview_server_profile:
+        config: "{{ config }}"
+        state: "absent"
+        data:
+          name: "{{ inventory_hostname }}"
+      delegate_to: localhost
